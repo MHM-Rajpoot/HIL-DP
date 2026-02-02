@@ -6,7 +6,11 @@ A complete MLOps pipeline for detecting data drift and enabling human-approved m
 ![Evidently](https://img.shields.io/badge/Evidently-0.4.33-green.svg)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-1.0+-orange.svg)
 
-## 📋 Table of Contents
+## � Drift Visualization
+
+![Drift Visualization](reports/drift_visualizations.png)
+
+## �📋 Table of Contents
 
 - [Overview](#-overview)
 - [Features](#-features)
