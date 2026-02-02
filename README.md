@@ -72,7 +72,7 @@ HIL/
 ### Step 1: Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone [<repository-url>](https://github.com/MHM-Rajpoot/HIL-DP/tree/main)
 cd HIL
 ```
 
@@ -333,3 +333,4 @@ This project is for educational and demonstration purposes.
 ---
 
 **Built with ❤️ for MLOps best practices**
+
