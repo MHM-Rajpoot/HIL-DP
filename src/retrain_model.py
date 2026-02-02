@@ -32,9 +32,4 @@ model.fit(X_train, y_train)
 os.makedirs(os.path.dirname(MODEL_OUT), exist_ok=True)
 joblib.dump(model, MODEL_OUT)
 
-# Update reference data with current data (new baseline after retraining)
-print("📊 Updating reference data with current data as new baseline...")
-shutil.copy(CURR_PATH, REF_PATH)
-
 print("✅ Model retrained and saved")
-print("✅ Reference data updated - drift will be 0% on next run")

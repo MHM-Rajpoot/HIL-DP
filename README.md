@@ -6,9 +6,11 @@ A complete MLOps pipeline for detecting data drift and enabling human-approved m
 ![Evidently](https://img.shields.io/badge/Evidently-0.4.33-green.svg)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-1.0+-orange.svg)
 
-## � Drift Visualization
+## 🎬 Auto-Resolve Progress
 
-![Drift Visualization](reports/drift_visualizations.png)
+![Auto-Resolve Progress](reports/auto_resolve_progress.gif)
+
+*Animated visualization showing drift reduction over multiple retraining cycles*
 
 ## �📋 Table of Contents
 
@@ -72,7 +74,7 @@ HIL/
 ### Step 1: Clone the Repository
 
 ```bash
-git clone github.com/MHM-Rajpoot/HIL-DP
+git clone <repository-url>
 cd HIL
 ```
 
@@ -202,15 +204,15 @@ The web dashboard at `http://localhost:8050` provides:
 - **Threshold** - Configurable drift threshold (default: 25%)
 
 ### Severity Indicator
-- 🟢 **LOW** (<25%) - Acceptable drift levels
-- 🟡 **MEDIUM** (25-50%) - Consider monitoring
-- 🔴 **HIGH** (>50%) - Retraining recommended
+- 🟢 **LOW** (<10%) - Acceptable drift levels
+- 🟡 **MEDIUM** (10-25%) - Consider monitoring
+- 🔴 **HIGH** (>25%) - Retraining recommended
 
 ### Action Buttons
 | Button | Description |
 |--------|-------------|
-| ✅ **Approve Retraining** | Retrain model with combined data |
-| ❌ **Reject** | Decline retraining, no changes made |
+| ✅ **Approve Retraining** | Retrain model once with gradual drift reduction |
+| 🤖 **Auto Resolve** | Automatically retrain until drift < 10% |
 | 🔄 **Refresh Analysis** | Re-run drift detection |
 | ⚡ **Reset Demo** | Simulate high drift for demonstration |
 
@@ -243,14 +245,182 @@ When drift exceeds the threshold:
 - Updates reference baseline
 - Regenerates reports
 
+## 🔄 Application Workflow
+
+### Complete Demo Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        START                                     │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🔄 RESET (Auto on Web Start)                                   │
+│  • Creates synthetic reference data with shifted distributions  │
+│  • Generates HIGH drift state (~70%)                            │
+│  • Runs drift detection                                         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  📊 DRIFT DETECTION                                             │
+│  • Compares reference vs current data                           │
+│  • Generates visualization with ALL columns                     │
+│  • Creates JSON report with metrics                             │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🔴 HIGH DRIFT DETECTED (>25%)                                  │
+│  • Dashboard shows warning                                       │
+│  • Approve/Reject buttons enabled                               │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+┌──────────────────────┐         ┌──────────────────────┐
+│  ✅ APPROVE          │         │  ❌ REJECT           │
+│  RETRAINING          │         │  No changes made     │
+└──────────────────────┘         └──────────────────────┘
+              │
+              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🔧 GRADUAL DRIFT REDUCTION (1st Approval)                      │
+│  • Retrains model on combined data                              │
+│  • Blends reference 40-60% towards current                      │
+│  • Drift reduced: 70% → ~35%                                    │
+│  • NEW visualization generated                                  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🟡 MEDIUM DRIFT (~35%)                                         │
+│  • Still above threshold                                        │
+│  • Continue monitoring...                                       │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🔧 GRADUAL DRIFT REDUCTION (2nd Approval)                      │
+│  • Blends reference another 40-60%                              │
+│  • Drift reduced: 35% → ~15%                                    │
+│  • NEW visualization generated                                  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  🟢 LOW DRIFT (~15%)                                            │
+│  • Below threshold - acceptable!                                │
+│  • No action required                                           │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  ⚡ RESET DEMO (Optional)                                       │
+│  • Click to restart with high drift                             │
+│  • Repeat the workflow                                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Key Features of the Workflow
+
+| Feature | Description |
+|---------|-------------|
+| **Gradual Reduction** | Drift reduces 40-60% per approval (not instant reset to 0%) |
+| **Multiple Approvals** | Takes 2-3 approvals to fully resolve drift |
+| **Real Data Blending** | Reference data is actually blended towards current |
+| **Fresh Visualizations** | New charts generated after each approval |
+| **Persistent State** | JSON report updated with real drift metrics |
+
+### 🤖 Auto-Resolve Mode
+
+The **Auto Resolve** feature automatically retrains the model until drift drops below 10%:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  🤖 AUTO-RESOLVE WORKFLOW                                       │
+└─────────────────────────────────────────────────────────────────┘
+
+   Initial State: 71% Drift (22/31 columns)
+         │
+         ▼
+   ┌─────────────────────────────────────┐
+   │  Retrain #1                         │
+   │  • Replace 40-60% reference rows    │
+   │  • Drift: 71% → 45%                 │
+   │  • Capture visualization frame      │
+   └─────────────────────────────────────┘
+         │
+         ▼
+   ┌─────────────────────────────────────┐
+   │  Retrain #2                         │
+   │  • Replace 40-60% reference rows    │
+   │  • Drift: 45% → 22%                 │
+   │  • Capture visualization frame      │
+   └─────────────────────────────────────┘
+         │
+         ▼
+   ┌─────────────────────────────────────┐
+   │  Retrain #3                         │
+   │  • Replace 40-60% reference rows    │
+   │  • Drift: 22% → 8%                  │
+   │  • Drift < 10% threshold ✅         │
+   └─────────────────────────────────────┘
+         │
+         ▼
+   ┌─────────────────────────────────────┐
+   │  ✅ COMPLETE                        │
+   │  • Generate progress GIF            │
+   │  • Show animated timeline           │
+   │  • Final drift: 8%                  │
+   └─────────────────────────────────────┘
+```
+
+#### How Drift Fluctuates During Auto-Resolve
+
+| Retrain # | Drift Before | Rows Replaced | Drift After | Status |
+|-----------|--------------|---------------|-------------|--------|
+| Initial   | 71%          | -             | 71%         | 🔴 HIGH |
+| #1        | 71%          | ~50%          | ~45%        | 🔴 HIGH |
+| #2        | 45%          | ~50%          | ~22%        | 🟡 MEDIUM |
+| #3        | 22%          | ~50%          | ~8%         | 🟢 LOW ✅ |
+
+**Key Points:**
+- Each retraining replaces **40-60% of reference rows** with current data rows
+- Drift reduction is **gradual, not instant** - realistic simulation
+- Process stops automatically when drift drops **below 10%**
+- Maximum **10 iterations** to prevent infinite loops
+- **Progress GIF** is generated showing the entire timeline
+
+#### CLI Usage
+```bash
+python src/pipeline.py
+# When prompted: "Approve retraining? (y/n/auto):"
+# Enter: auto
+```
+
+#### Web Usage
+Click the **🤖 Auto Resolve** button on the dashboard
+
+### CLI vs Web Interface
+
+| Feature | CLI (`pipeline.py`) | Web (`web_pipeline.py`) |
+|---------|---------------------|-------------------------|
+| Interaction | Terminal prompts (y/n) | Browser buttons |
+| Auto-reset | No | Yes (on startup) |
+| Visualization | Opens browser once | Embedded in dashboard |
+| Loop | Asks to continue | Always available |
+| Report | Static HTML | Dynamic updates |
+
 ## 🔧 Configuration
 
 ### Drift Threshold
 
-Edit `src/web_pipeline.py` or `src/pipeline.py`:
+Edit `src/pipeline.py`:
 
 ```python
-DRIFT_THRESHOLD = 0.25  # 25% of columns must drift to trigger action
+DRIFT_THRESHOLD = 0.10  # 10% of columns must drift to trigger action
 ```
 
 ### Model Parameters
@@ -333,5 +503,3 @@ This project is for educational and demonstration purposes.
 ---
 
 **Built with ❤️ for MLOps best practices**
-
-

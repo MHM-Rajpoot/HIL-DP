@@ -10,7 +10,9 @@ from urllib.parse import parse_qs
 import pandas as pd
 import numpy as np
 
-DRIFT_THRESHOLD = 0.25
+# Import CLI pipeline functions to avoid code duplication
+from pipeline import approve_retraining, reset_demo, run_drift_detection, get_drift_status, auto_resolve_drift, DRIFT_THRESHOLD
+
 PORT = 8050
 REPORT_DIR = "reports"
 
@@ -18,56 +20,61 @@ class PipelineHandler(SimpleHTTPRequestHandler):
     """Custom HTTP handler for the drift pipeline web interface"""
     
     def do_GET(self):
-        if self.path == '/' or self.path == '/dashboard':
+        if self.path == '/' or self.path.startswith('/dashboard'):
             self.serve_dashboard()
         elif self.path == '/approve':
             self.handle_approval()
         elif self.path == '/reject':
             self.handle_rejection()
         elif self.path == '/refresh':
-            self.run_drift_detection()
+            self.do_run_drift_detection()
             self.serve_dashboard()
         elif self.path == '/reset':
             self.handle_reset()
+        elif self.path == '/auto_resolve':
+            self.handle_auto_resolve()
         else:
             super().do_GET()
     
     def serve_dashboard(self):
         """Serve the main dashboard with drift report and approval buttons"""
-        html = self.generate_dashboard_html()
+        # Check for message and gif flag in query string
+        message = None
+        success = True
+        show_gif = False
+        
+        if '?' in self.path:
+            from urllib.parse import unquote, parse_qs, urlparse
+            parsed = urlparse(self.path)
+            params = parse_qs(parsed.query)
+            
+            if 'msg' in params:
+                message = unquote(params['msg'][0].replace('+', ' '))
+                success = '✅' in message
+            
+            if 'gif' in params:
+                show_gif = True
+        
+        html = self.generate_dashboard_html(message=message, success=success, show_gif=show_gif)
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         self.end_headers()
         self.wfile.write(html.encode('utf-8'))
     
     def handle_approval(self):
-        """Handle retraining approval"""
+        """Handle retraining approval by calling CLI function"""
         print("\n✅ Retraining approved by user via web interface!")
         
-        # Run retraining
-        try:
-            subprocess.run([sys.executable, "src/retrain_model.py"], check=True)
-            message = "✅ Model retrained successfully!"
-            success = True
-        except subprocess.CalledProcessError as e:
-            message = f"❌ Retraining failed: {e}"
-            success = False
+        # Call the CLI pipeline function (reuses logic, no duplication)
+        result = approve_retraining(silent=True)
         
-        # Re-run drift detection to update visuals with ALL columns shown
-        if success:
-            print("🔄 Regenerating drift visualizations with all columns...")
-            try:
-                subprocess.run([sys.executable, "src/detect_drift.py", "--no-browser", "--show-all"], check=True)
-                print("✅ Visualizations updated with all columns!")
-            except subprocess.CalledProcessError as e:
-                print(f"⚠️ Warning: Could not regenerate visuals: {e}")
-        
-        # Serve updated dashboard with message
-        html = self.generate_dashboard_html(message=message, success=success)
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html')
+        # Redirect to dashboard to force browser refresh with new data
+        from urllib.parse import quote
+        msg = quote(result["message"])
+        self.send_response(302)
+        self.send_header('Location', f'/dashboard?msg={msg}')
         self.end_headers()
-        self.wfile.write(html.encode('utf-8'))
     
     def handle_rejection(self):
         """Handle retraining rejection"""
@@ -79,54 +86,46 @@ class PipelineHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html.encode('utf-8'))
     
-    def run_drift_detection(self):
-        """Run drift detection script"""
-        try:
-            subprocess.run([sys.executable, "src/detect_drift.py", "--no-browser"], check=True,
-                         capture_output=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Error running drift detection: {e}")
+    def do_run_drift_detection(self):
+        """Run drift detection script using CLI function"""
+        run_drift_detection(show_all=True, open_browser=False)
     
     def handle_reset(self):
         """Reset reference data to simulate high drift for demo"""
-        print("\n🔄 Resetting to demo state (high drift)...")
+        # Use CLI function (no duplication)
+        result = reset_demo(silent=True)
         
-        try:
-            # Create synthetic reference data with different distribution
-            current_df = pd.read_csv("data/current.csv")
-            
-            # Create reference with shifted distributions to cause drift
-            reference_df = current_df.copy()
-            numeric_cols = reference_df.select_dtypes(include=['number']).columns
-            
-            for col in numeric_cols:
-                if col != 'Churn':  # Don't modify target
-                    # Shift the distribution to create drift
-                    reference_df[col] = reference_df[col] * np.random.uniform(0.5, 1.5) + np.random.uniform(-10, 10)
-            
-            # Take only first 500 rows to make it different
-            reference_df = reference_df.iloc[:500]
-            reference_df.to_csv("data/reference.csv", index=False)
-            
-            # Re-run drift detection
-            subprocess.run([sys.executable, "src/detect_drift.py", "--no-browser"], check=True)
-            
-            message = "🔄 Reset complete! High drift state restored. Review and approve retraining."
-            success = True
-            print("✅ Reset complete - high drift state restored")
-        except Exception as e:
-            message = f"❌ Reset failed: {e}"
-            success = False
-            print(f"❌ Reset failed: {e}")
-        
-        html = self.generate_dashboard_html(message=message, success=success, is_reset=True)
+        html = self.generate_dashboard_html(message=result["message"], success=result["success"], is_reset=True)
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
         self.wfile.write(html.encode('utf-8'))
     
-    def generate_dashboard_html(self, message=None, success=None, is_reset=False):
-        """Generate the dashboard HTML with embedded visualizations"""
+    def handle_auto_resolve(self):
+        """Handle automatic drift resolution until drift is acceptable"""
+        print("\n🤖 Auto-resolving drift via web interface...")
+        
+        # Call the CLI auto_resolve function (reuses logic, no duplication)
+        result = auto_resolve_drift(silent=True)
+        
+        # Redirect to dashboard to force browser refresh with new data
+        # Include gif flag if GIF was created
+        from urllib.parse import quote
+        msg = quote(result["message"])
+        gif_param = "&gif=1" if result.get("gif_path") else ""
+        self.send_response(302)
+        self.send_header('Location', f'/dashboard?msg={msg}{gif_param}')
+        self.end_headers()
+    
+    def generate_dashboard_html(self, message=None, success=None, is_reset=False, show_gif=False):
+        """Generate the dashboard HTML from template with dynamic data"""
+        
+        # Load HTML template
+        try:
+            with open("src/templates/dashboard.html", "r", encoding="utf-8") as f:
+                html_template = f.read()
+        except FileNotFoundError:
+            return "<html><body><h1>Error: Template file not found</h1></body></html>"
         
         # Load drift report data
         try:
@@ -148,12 +147,21 @@ class PipelineHandler(SimpleHTTPRequestHandler):
         except:
             pass
         
+        # Load progress GIF as base64 if requested
+        gif_base64 = ""
+        if show_gif:
+            try:
+                with open("reports/auto_resolve_progress.gif", "rb") as gif_file:
+                    gif_base64 = base64.b64encode(gif_file.read()).decode('utf-8')
+            except:
+                pass
+        
         # Determine severity
-        if drift_ratio >= 0.5:
+        if drift_ratio >= 0.25:
             severity = "🔴 HIGH"
             severity_color = "#dc3545"
             severity_bg = "#f8d7da"
-        elif drift_ratio >= 0.25:
+        elif drift_ratio >= 0.10:
             severity = "🟡 MEDIUM"
             severity_color = "#ffc107"
             severity_bg = "#fff3cd"
@@ -164,6 +172,23 @@ class PipelineHandler(SimpleHTTPRequestHandler):
         
         needs_action = drift_ratio >= DRIFT_THRESHOLD
         
+        # Action section colors
+        action_bg = "#fff3cd" if needs_action else "#d4edda"
+        action_border = "#ffc107" if needs_action else "#28a745"
+        action_text_color = "#856404" if needs_action else "#155724"
+        
+        # Action message and buttons (web interface has all interactive buttons)
+        if needs_action:
+            action_message = "⚠️ Drift exceeds threshold! Human approval required for retraining."
+            action_buttons = """<a href='/approve' class='btn btn-approve'>✅ Approve Retraining</a>
+                <a href='/auto_resolve' class='btn btn-auto'>🤖 Auto Resolve</a>
+                <a href="/refresh" class="btn btn-refresh">🔄 Refresh Analysis</a>
+                <a href="/reset" class="btn btn-reset">⚡ Reset Demo</a>"""
+        else:
+            action_message = "✅ Drift is within acceptable limits. No action required."
+            action_buttons = """<a href="/refresh" class="btn btn-refresh">🔄 Refresh Analysis</a>
+                <a href="/reset" class="btn btn-reset">⚡ Reset Demo</a>"""
+        
         # Message banner
         message_html = ""
         if message:
@@ -173,6 +198,7 @@ class PipelineHandler(SimpleHTTPRequestHandler):
             else:
                 msg_color = "#28a745" if success else "#dc3545"
                 msg_bg = "#d4edda" if success else "#f8d7da"
+            
             message_html = f'''
             <div style="background: {msg_bg}; color: {msg_color}; padding: 20px; 
                         border-radius: 10px; margin-bottom: 20px; text-align: center;
@@ -181,227 +207,31 @@ class PipelineHandler(SimpleHTTPRequestHandler):
             </div>
             '''
         
-        html = f'''
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔍 Drift Detection Pipeline</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
-            padding: 20px;
-            color: #333;
-        }}
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-        }}
-        .header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 30px;
-            border-radius: 15px;
-            color: white;
-            text-align: center;
-            margin-bottom: 20px;
-            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
-        }}
-        .header h1 {{
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }}
-        .header p {{
-            opacity: 0.9;
-            font-size: 1.1em;
-        }}
-        .card {{
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-        }}
-        .card h2 {{
-            color: #333;
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }}
-        .metrics-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }}
-        .metric-box {{
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            border-left: 4px solid #667eea;
-        }}
-        .metric-box .value {{
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #333;
-        }}
-        .metric-box .label {{
-            color: #666;
-            font-size: 0.9em;
-            margin-top: 5px;
-        }}
-        .severity-badge {{
-            display: inline-block;
-            padding: 10px 20px;
-            border-radius: 25px;
-            font-weight: bold;
-            font-size: 1.2em;
-            background: {severity_bg};
-            color: {severity_color};
-            border: 2px solid {severity_color};
-        }}
-        .action-section {{
-            background: {"#fff3cd" if needs_action else "#d4edda"};
-            border: 2px solid {"#ffc107" if needs_action else "#28a745"};
-            border-radius: 15px;
-            padding: 30px;
-            text-align: center;
-            margin-bottom: 20px;
-        }}
-        .action-section h3 {{
-            color: {"#856404" if needs_action else "#155724"};
-            font-size: 1.5em;
-            margin-bottom: 20px;
-        }}
-        .btn {{
-            display: inline-block;
-            padding: 15px 40px;
-            font-size: 1.2em;
-            font-weight: bold;
-            border: none;
-            border-radius: 50px;
-            cursor: pointer;
-            text-decoration: none;
-            margin: 10px;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }}
-        .btn-approve {{
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-            color: white;
-        }}
-        .btn-approve:hover {{
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
-        }}
-        .btn-reject {{
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-            color: white;
-        }}
-        .btn-reject:hover {{
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4);
-        }}
-        .btn-refresh {{
-            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
-            color: white;
-        }}
-        .btn-refresh:hover {{
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(23, 162, 184, 0.4);
-        }}
-        .btn-reset {{
-            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
-            color: white;
-        }}
-        .btn-reset:hover {{
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(108, 117, 125, 0.4);
-        }}
-        .visualization {{
-            text-align: center;
-        }}
-        .visualization img {{
-            max-width: 100%;
-            border-radius: 10px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-        }}
-        .timestamp {{
-            text-align: center;
-            color: #666;
-            font-size: 0.9em;
-            margin-top: 20px;
-        }}
-        .no-action {{
-            background: #d4edda;
-            border: 2px solid #28a745;
-        }}
-        .no-action h3 {{
-            color: #155724;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🔍 Human-in-the-Loop Drift Pipeline</h1>
-            <p>Monitor data drift and approve model retraining</p>
-        </div>
+        # Visualization HTML - show GIF if available (after auto-resolve), otherwise show PNG
+        if gif_base64:
+            visualization_html = f"<img src='data:image/gif;base64,{gif_base64}' alt='Auto-Resolve Progress Timeline'/>"
+        elif img_base64:
+            visualization_html = f"<img src='data:image/png;base64,{img_base64}' alt='Drift Visualizations'/>"
+        else:
+            visualization_html = "<p>No visualization available. Run drift detection first.</p>"
         
-        {message_html}
+        # Replace placeholders in template
+        html = html_template.replace("{{MESSAGE_HTML}}", message_html)
+        html = html.replace("{{TOTAL_COLUMNS}}", str(result.get("number_of_columns", "N/A")))
+        html = html.replace("{{DRIFTED_COLUMNS}}", str(result.get("number_of_drifted_columns", "N/A")))
+        html = html.replace("{{DRIFT_RATIO}}", f"{drift_ratio:.1%}")
+        html = html.replace("{{THRESHOLD}}", f"{DRIFT_THRESHOLD:.0%}")
+        html = html.replace("{{SEVERITY}}", severity)
+        html = html.replace("{{SEVERITY_COLOR}}", severity_color)
+        html = html.replace("{{SEVERITY_BG}}", severity_bg)
+        html = html.replace("{{ACTION_BG}}", action_bg)
+        html = html.replace("{{ACTION_BORDER}}", action_border)
+        html = html.replace("{{ACTION_TEXT_COLOR}}", action_text_color)
+        html = html.replace("{{ACTION_MESSAGE}}", action_message)
+        html = html.replace("{{ACTION_BUTTONS}}", action_buttons)
+        html = html.replace("{{VISUALIZATION}}", visualization_html)
+        html = html.replace("{{TIMESTAMP}}", pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
         
-        <div class="card">
-            <h2>📊 Drift Metrics</h2>
-            <div class="metrics-grid">
-                <div class="metric-box">
-                    <div class="value">{result.get("number_of_columns", "N/A")}</div>
-                    <div class="label">Total Columns</div>
-                </div>
-                <div class="metric-box">
-                    <div class="value" style="color: #dc3545;">{result.get("number_of_drifted_columns", "N/A")}</div>
-                    <div class="label">Drifted Columns</div>
-                </div>
-                <div class="metric-box">
-                    <div class="value">{drift_ratio:.1%}</div>
-                    <div class="label">Drift Ratio</div>
-                </div>
-                <div class="metric-box">
-                    <div class="value">{DRIFT_THRESHOLD:.0%}</div>
-                    <div class="label">Threshold</div>
-                </div>
-            </div>
-            <div style="text-align: center; margin-top: 20px;">
-                <span class="severity-badge">{severity} Severity</span>
-            </div>
-        </div>
-        
-        <div class="action-section {"" if needs_action else "no-action"}">
-            {"<h3>⚠️ Drift exceeds threshold! Human approval required for retraining.</h3>" if needs_action else "<h3>✅ Drift is within acceptable limits. No action required.</h3>"}
-            <div>
-                {"<a href='/approve' class='btn btn-approve'>✅ Approve Retraining</a><a href='/reject' class='btn btn-reject'>❌ Reject</a>" if needs_action else ""}
-                <a href="/refresh" class="btn btn-refresh">🔄 Refresh Analysis</a>
-                <a href="/reset" class="btn btn-reset">⚡ Reset Demo</a>
-            </div>
-        </div>
-        
-        <div class="card">
-            <h2>📈 Visual Analysis</h2>
-            <div class="visualization">
-                {"<img src='data:image/png;base64," + img_base64 + "' alt='Drift Visualizations'/>" if img_base64 else "<p>No visualization available. Run drift detection first.</p>"}
-            </div>
-        </div>
-        
-        <div class="timestamp">
-            Last updated: {pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")}
-        </div>
-    </div>
-</body>
-</html>
-'''
         return html
     
     def log_message(self, format, *args):
@@ -415,23 +245,17 @@ def run_pipeline():
     print("🚀 Starting Human-in-the-Loop Drift Pipeline (Web Interface)")
     print("="*60)
     
-    # Run initial drift detection (with --no-browser to avoid opening HTML file)
-    print("\n📊 Running drift detection...")
-    try:
-        subprocess.run([sys.executable, "src/detect_drift.py", "--no-browser"], check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Error running drift detection: {e}")
+    # Always reset to high drift state on startup for demo
+    print("\n🔄 Initializing demo with high drift state...")
+    reset_demo(silent=True)
+    
+    # Load drift report using CLI function
+    drift_status = get_drift_status()
+    if not drift_status:
+        print("❌ Error loading drift report")
         return
     
-    # Load drift report
-    try:
-        with open("reports/drift_report.json") as f:
-            report = json.load(f)
-        result = report["metrics"][0]["result"]
-        drift_ratio = result["number_of_drifted_columns"] / result["number_of_columns"]
-    except Exception as e:
-        print(f"❌ Error loading drift report: {e}")
-        return
+    drift_ratio = drift_status["drift_ratio"]
     
     print(f"\n📊 Drift ratio: {drift_ratio:.2%}")
     print(f"📊 Threshold: {DRIFT_THRESHOLD:.2%}")

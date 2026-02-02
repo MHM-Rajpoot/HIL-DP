@@ -75,18 +75,23 @@ print("="*50)
 
 # Get numeric columns for distribution plots (exclude zero-variance columns)
 numeric_cols = reference.select_dtypes(include=['number']).columns.tolist()
-# Filter out columns with zero or near-zero variance
-valid_cols = [col for col in numeric_cols if reference[col].std() > 0.01 and current[col].std() > 0.01]
+
+# When showing all columns, be more lenient with variance threshold
+if SHOW_ALL_COLUMNS:
+    # For --show-all, include all numeric columns with any variance
+    valid_cols = [col for col in numeric_cols if reference[col].std() > 0 and current[col].std() > 0]
+    print(f"🔧 SHOW_ALL_COLUMNS flag: {SHOW_ALL_COLUMNS} - Including all numeric columns")
+else:
+    # For normal mode, filter out columns with zero or near-zero variance
+    valid_cols = [col for col in numeric_cols if reference[col].std() > 0.01 and current[col].std() > 0.01]
+    print(f"🔧 SHOW_ALL_COLUMNS flag: {SHOW_ALL_COLUMNS} - Filtering low-variance columns")
 
 # Prioritize drifted columns that have valid variance
 drifted_valid = [col for col in drifted_columns if col in valid_cols]
 non_drifted_valid = [col for col in valid_cols if col not in drifted_columns]
 
-# Number of drifted columns to show
-num_drifted = len(drifted_valid)
-print(f"📈 Found {num_drifted} drifted columns with valid variance for plotting")
+print(f"📈 Found {len(drifted_valid)} drifted columns with valid variance for plotting")
 print(f"📊 Total valid columns available: {len(valid_cols)}")
-print(f"🔧 SHOW_ALL_COLUMNS flag: {SHOW_ALL_COLUMNS}")
 
 # Determine which columns to plot - all valid columns if --show-all, otherwise just drifted
 if SHOW_ALL_COLUMNS:
@@ -138,14 +143,14 @@ for bar, val in zip(bars, metrics_data.values()):
 # 3. Drift Share Gauge-like visualization
 ax3 = fig.add_subplot(gs[0, 2])
 drift_share = metric['share_of_drifted_columns']
-colors_gauge = ['#51cf66' if drift_share < 0.25 else '#fcc419' if drift_share < 0.5 else '#ff6b6b']
+colors_gauge = ['#51cf66' if drift_share < 0.10 else '#fcc419' if drift_share < 0.25 else '#ff6b6b']
 ax3.barh(['Drift Share'], [drift_share], color=colors_gauge, height=0.4, edgecolor='black')
 ax3.barh(['Drift Share'], [1-drift_share], left=[drift_share], color='#e9ecef', height=0.4, edgecolor='black')
 ax3.set_xlim(0, 1)
 ax3.set_ylim(-0.8, 0.8)  # Extend y-axis to make room for legend below
 ax3.set_title('Drift Threshold Indicator', fontsize=12, fontweight='bold')
-ax3.axvline(x=0.25, color='orange', linestyle='--', linewidth=2, label='Warning (25%)')
-ax3.axvline(x=0.5, color='red', linestyle='--', linewidth=2, label='Critical (50%)')
+ax3.axvline(x=0.10, color='orange', linestyle='--', linewidth=2, label='Warning (10%)')
+ax3.axvline(x=0.25, color='red', linestyle='--', linewidth=2, label='Critical (25%)')
 ax3.legend(loc='lower right', fontsize=8)
 ax3.text(drift_share/2, 0, f'{drift_share:.1%}', ha='center', va='center', 
          fontweight='bold', fontsize=14, color='white')
@@ -184,18 +189,87 @@ plt.savefig(VISUAL_REPORT, dpi=150, bbox_inches='tight', facecolor='white')
 plt.close()
 
 # -----------------------------
-# Create Combined HTML Report
+# Create Combined HTML Report using Template
 # -----------------------------
-# Read the original Evidently HTML report
-with open(HTML_REPORT, 'r', encoding='utf-8') as f:
-    evidently_html = f.read()
+# Load HTML template
+try:
+    with open("src/templates/dashboard.html", "r", encoding="utf-8") as f:
+        html_template = f.read()
+except FileNotFoundError:
+    print("⚠️  Warning: Template file not found. Using simple report.")
+    html_template = None
 
 # Encode the visualization image as base64
 with open(VISUAL_REPORT, 'rb') as img_file:
     img_base64 = base64.b64encode(img_file.read()).decode('utf-8')
 
-# Create custom header with visualization
-custom_header = f'''
+# Read the original Evidently HTML report for combined version
+with open(HTML_REPORT, 'r', encoding='utf-8') as f:
+    evidently_html = f.read()
+
+if html_template:
+    # Calculate drift ratio
+    drift_ratio = metric['number_of_drifted_columns'] / metric['number_of_columns']
+    
+    # Determine severity
+    if drift_ratio >= 0.25:
+        severity = "🔴 HIGH"
+        severity_color = "#dc3545"
+        severity_bg = "#f8d7da"
+    elif drift_ratio >= 0.10:
+        severity = "🟡 MEDIUM"
+        severity_color = "#ffc107"
+        severity_bg = "#fff3cd"
+    else:
+        severity = "🟢 LOW"
+        severity_color = "#28a745"
+        severity_bg = "#d4edda"
+    
+    # Determine action section
+    DRIFT_THRESHOLD = 0.10
+    needs_action = drift_ratio >= DRIFT_THRESHOLD
+    action_bg = "#fff3cd" if needs_action else "#d4edda"
+    action_border = "#ffc107" if needs_action else "#28a745"
+    action_text_color = "#856404" if needs_action else "#155724"
+    
+    if needs_action:
+        action_message = "⚠️ Drift exceeds threshold! Run the pipeline to approve retraining."
+    else:
+        action_message = "✅ Drift is within acceptable limits. No action required."
+    
+    # No buttons for CLI report (static HTML)
+    action_buttons = "<p style='color: #666; font-size: 0.9em;'>Run <code>python src/pipeline.py</code> to take action.</p>"
+    
+    # Message banner (none for static report)
+    message_html = ""
+    
+    # Visualization HTML
+    visualization_html = f"<img src='data:image/png;base64,{img_base64}' alt='Drift Visualizations'/>"
+    
+    # Replace placeholders in template
+    combined_html = html_template.replace("{{MESSAGE_HTML}}", message_html)
+    combined_html = combined_html.replace("{{TOTAL_COLUMNS}}", str(metric["number_of_columns"]))
+    combined_html = combined_html.replace("{{DRIFTED_COLUMNS}}", str(metric["number_of_drifted_columns"]))
+    combined_html = combined_html.replace("{{DRIFT_RATIO}}", f"{drift_ratio:.1%}")
+    combined_html = combined_html.replace("{{THRESHOLD}}", f"{DRIFT_THRESHOLD:.0%}")
+    combined_html = combined_html.replace("{{SEVERITY}}", severity)
+    combined_html = combined_html.replace("{{SEVERITY_COLOR}}", severity_color)
+    combined_html = combined_html.replace("{{SEVERITY_BG}}", severity_bg)
+    combined_html = combined_html.replace("{{ACTION_BG}}", action_bg)
+    combined_html = combined_html.replace("{{ACTION_BORDER}}", action_border)
+    combined_html = combined_html.replace("{{ACTION_TEXT_COLOR}}", action_text_color)
+    combined_html = combined_html.replace("{{ACTION_MESSAGE}}", action_message)
+    combined_html = combined_html.replace("{{ACTION_BUTTONS}}", action_buttons)
+    combined_html = combined_html.replace("{{VISUALIZATION}}", visualization_html)
+    combined_html = combined_html.replace("{{TIMESTAMP}}", pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"))
+    
+    # Save combined report with template
+    COMBINED_REPORT = os.path.join(REPORT_DIR, "drift_report_combined.html")
+    with open(COMBINED_REPORT, 'w', encoding='utf-8') as f:
+        f.write(combined_html)
+else:
+    # Fallback: create simple combined report
+    custom_header = f'''
 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; margin-bottom: 20px; border-radius: 10px; color: white; text-align: center;">
     <h1 style="margin: 0; font-size: 2.5em;">🔍 Data Drift Analysis Dashboard</h1>
     <p style="margin: 10px 0 0 0; font-size: 1.2em; opacity: 0.9;">Generated on {pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
@@ -219,7 +293,7 @@ custom_header = f'''
         </div>
         <div style="flex: 1; min-width: 200px;">
             <p style="margin: 5px 0; font-size: 1.1em;"><strong>Severity:</strong> 
-                {"🔴 HIGH - Retraining recommended!" if metric["share_of_drifted_columns"] >= 0.5 else "🟡 MEDIUM - Consider monitoring" if metric["share_of_drifted_columns"] >= 0.25 else "🟢 LOW - Acceptable"}
+                {"🔴 HIGH - Retraining recommended!" if metric["share_of_drifted_columns"] >= 0.25 else "🟡 MEDIUM - Consider monitoring" if metric["share_of_drifted_columns"] >= 0.10 else "🟢 LOW - Acceptable"}
             </p>
         </div>
     </div>
@@ -228,15 +302,12 @@ custom_header = f'''
 <div style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
     <h2 style="color: #333; border-bottom: 3px solid #667eea; padding-bottom: 10px;">📈 Detailed Evidently Report</h2>
 '''
-
-# Insert custom header after body tag
-combined_html = evidently_html.replace('<body>', '<body style="background: #f5f5f5; padding: 20px;">' + custom_header)
-combined_html = combined_html.replace('</body>', '</div></body>')
-
-# Save combined report
-COMBINED_REPORT = os.path.join(REPORT_DIR, "drift_report_combined.html")
-with open(COMBINED_REPORT, 'w', encoding='utf-8') as f:
-    f.write(combined_html)
+    combined_html = evidently_html.replace('<body>', '<body style="background: #f5f5f5; padding: 20px;">' + custom_header)
+    combined_html = combined_html.replace('</body>', '</div></body>')
+    
+    COMBINED_REPORT = os.path.join(REPORT_DIR, "drift_report_combined.html")
+    with open(COMBINED_REPORT, 'w', encoding='utf-8') as f:
+        f.write(combined_html)
 
 # -----------------------------
 # Console Summary with Colors
