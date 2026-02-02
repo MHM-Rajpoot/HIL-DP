@@ -41,25 +41,32 @@ This pipeline automatically detects when production data has drifted from traini
 ```
 HIL/
 ├── data/
-│   ├── reference.csv      # Baseline/training data
-│   └── current.csv        # Production/incoming data
+│   ├── reference.csv          # Baseline/training data
+│   ├── current.csv            # Production/incoming data
+│   └── raw/                   # Raw downloaded data
+│       └── telco.csv
 ├── models/
-│   └── churn_model_v2.pkl # Trained model
+│   └── churn_model_v2.pkl     # Trained model
 ├── reports/
-│   ├── drift_report.html  # Evidently HTML report
-│   ├── drift_report.json  # Drift metrics in JSON
-│   └── drift_visualizations.png  # Visual charts
+│   ├── drift_report.html      # Evidently HTML report
+│   ├── drift_report.json      # Drift metrics in JSON
+│   ├── drift_report_combined.html  # Combined dashboard report
+│   ├── drift_visualizations.png    # Visual charts
+│   ├── auto_resolve_progress.gif   # Auto-resolve timeline GIF
+│   └── gif_frames/            # Temporary frames for GIF generation
 ├── secrets/
-│   └── kaggle.json        # Kaggle API credentials (optional)
+│   └── kaggle.json            # Kaggle API credentials (optional)
 ├── src/
-│   ├── detect_drift.py    # Drift detection with visualizations
-│   ├── load_data.py       # Data loading utilities
-│   ├── pipeline.py        # CLI-based pipeline
-│   ├── preprocess.py      # Data preprocessing
-│   ├── retrain_model.py   # Model retraining script
-│   ├── train.py           # Initial model training
-│   └── web_pipeline.py    # Web-based pipeline with UI
-├── requirements.txt       # Python dependencies
+│   ├── detect_drift.py        # Drift detection with visualizations
+│   ├── load_data.py           # Data loading utilities
+│   ├── pipeline.py            # CLI-based pipeline (main entry)
+│   ├── preprocess.py          # Data preprocessing
+│   ├── retrain_model.py       # Model retraining script
+│   ├── train.py               # Initial model training
+│   ├── web_pipeline.py        # Web-based pipeline with UI
+│   └── templates/
+│       └── dashboard.html     # HTML template for reports
+├── requirements.txt           # Python dependencies
 └── README.md
 ```
 
@@ -74,7 +81,7 @@ HIL/
 ### Step 1: Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone github.com/MHM-Rajpoot/HIL-DP
 cd HIL
 ```
 
