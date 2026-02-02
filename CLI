@@ -1,0 +1,43 @@
+
+# Structure
+
+HIL/
+├── data/
+│   ├── reference.csv      # Baseline/training data
+│   └── current.csv        # Production/incoming data
+├── models/
+│   └── churn_model_v2.pkl # Trained model
+├── reports/
+│   ├── drift_report.html  # Evidently HTML report
+│   ├── drift_report.json  # Drift metrics in JSON
+│   └── drift_visualizations.png  # Visual charts
+├── secrets/
+│   └── kaggle.json        # Kaggle API credentials (optional)
+├── src/
+│   ├── detect_drift.py    # Drift detection with visualizations
+│   ├── load_data.py       # Data loading utilities
+│   ├── pipeline.py        # CLI-based pipeline
+│   ├── preprocess.py      # Data preprocessing
+│   ├── retrain_model.py   # Model retraining script
+│   ├── train.py           # Initial model training
+│   └── web_pipeline.py    # Web-based pipeline with UI
+├── requirements.txt       # Python dependencies
+└── README.md
+
+# Setup
+python -m venv venv
+
+# Activate
+.\venv\Scripts\activate
+or 
+deactivate
+
+# Install Requirements
+pip install -r requirements.txt
+pip freeze > requirements.txt
+
+# Run CLI Pipeline
+python src/pipeline.py
+
+# Run GUI Pipeline
+python src/web_pipeline.py
