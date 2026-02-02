@@ -258,7 +258,7 @@ When drift exceeds the threshold:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        START                                    │
+│                            START                                │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -510,3 +510,4 @@ This project is for educational and demonstration purposes.
 ---
 
 **Built with ❤️ for MLOps best practices**
+
